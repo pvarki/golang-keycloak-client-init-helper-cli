@@ -1,0 +1,205 @@
+package main
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/buger/jsonparser"
+	"github.com/go-resty/resty/v2"
+	log "github.com/sirupsen/logrus"
+	"github.com/urfave/cli/v2"
+)
+
+func fileExist(pth string) bool {
+	if _, err := os.Stat(pth); err == nil {
+		return true
+	} else if errors.Is(err, os.ErrNotExist) {
+		return false
+	} else {
+		log.Errorf("Can't verify %s: %s", pth, err)
+		return false
+	}
+}
+
+func commonFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{Name: "capath", Value: "/ca_public"},
+		&cli.StringFlag{Name: "datapath", Value: "/data/persistent"},
+		&cli.StringFlag{Name: "tokenpath", Value: "token.jwt"},
+	}
+}
+
+func main() {
+	app := &cli.App{
+		Name:  "kc_client_init",
+		Usage: "Keycloak OIDC client management",
+		Commands: []*cli.Command{
+			{
+				Name:   "get_jwt",
+				Usage:  "Fetch a Keycloak Initial Access Token (IAT)",
+				Action: getKCTokenAction,
+				Flags:  commonFlags(),
+			},
+			{
+				Name:   "register_oidc",
+				Usage:  "Register the OIDC client using the stored token",
+				Action: registerClientAction,
+				Flags:  commonFlags(),
+			},
+		},
+	}
+
+	if err := app.Run(os.Args); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func getKCTokenAction(ctx *cli.Context) error {
+	if ctx.Args().Len() < 1 {
+		return cli.Exit("Manifest path required", 1)
+	}
+
+	manifestPath := ctx.Args().Get(0)
+	jsondata, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	rmBase, err := jsonparser.GetString(jsondata, "rasenmaeher", "mtls", "base_uri")
+	if err != nil {
+		return fmt.Errorf("could not find mtls base_uri in manifest: %w", err)
+	}
+
+	datapath := ctx.String("datapath")
+	certpath := filepath.Join(datapath, "public", "mtlsclient.pem")
+	keypath := filepath.Join(datapath, "private", "mtlsclient.key")
+
+	if !fileExist(certpath) || !fileExist(keypath) {
+		return errors.New("mtls certificates not found")
+	}
+
+	clientKP, err := tls.LoadX509KeyPair(certpath, keypath)
+	if err != nil {
+		return fmt.Errorf("failed to load keypair: %w", err)
+	}
+
+	certpool, _ := x509.SystemCertPool()
+	if certpool == nil {
+		certpool = x509.NewCertPool()
+	}
+
+	caFiles, _ := filepath.Glob(filepath.Join(ctx.String("capath"), "*.pem"))
+	for _, f := range caFiles {
+		raw, _ := os.ReadFile(f)
+		certpool.AppendCertsFromPEM(raw)
+	}
+
+	client := resty.New()
+	client.SetTLSClientConfig(&tls.Config{
+		RootCAs:      certpool,
+		Certificates: []tls.Certificate{clientKP},
+	})
+
+	url := fmt.Sprintf("https://%s:4439/api/v1/product/kctoken", rmBase)
+	log.Infof("Requesting token from %s", url)
+
+	resp, err := client.R().
+		SetResult(map[string]interface{}{}).
+		Post(url)
+
+	if err != nil {
+		return fmt.Errorf("network error: %w", err)
+	}
+	if !resp.IsSuccess() {
+		return fmt.Errorf("RASENMAEHER error (%d): %s", resp.StatusCode(), resp.Body())
+	}
+	token, err := jsonparser.GetString(resp.Body(), "token")
+	if err != nil {
+		return fmt.Errorf("could not find token in response: %s", resp.Body())
+	}
+
+	outputPath := filepath.Join(datapath, "public", ctx.String("tokenpath"))
+	if err := os.WriteFile(outputPath, []byte(token), 0644); err != nil {
+		return fmt.Errorf("failed to write token file: %w", err)
+	}
+
+	log.Infof("Successfully saved token to %s", outputPath)
+	fmt.Println(token)
+	return nil
+}
+
+func registerClientAction(ctx *cli.Context) error {
+	if ctx.Args().Len() < 1 {
+		return cli.Exit("Manifest path required", 1)
+	}
+
+	manifestPath := ctx.Args().Get(0)
+	jsondata, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	kcBase, err := jsonparser.GetString(jsondata, "rasenmaeher", "kc", "base_uri")
+	kcRealm, err := jsonparser.GetString(jsondata, "rasenmaeher", "kc", "realm")
+
+	datapath := ctx.String("datapath")
+	tokenPath := filepath.Join(datapath, "public", ctx.String("tokenpath"))
+	token, err := os.ReadFile(tokenPath)
+	if err != nil {
+		return fmt.Errorf("could not read token file: %w", err)
+	}
+
+	clientID, err := jsonparser.GetString(jsondata, "oidc", "client_registration", "client_id")
+	if err != nil {
+		return fmt.Errorf("client_id is required in manifest: %w", err)
+	}
+
+	clientName, err := jsonparser.GetString(jsondata, "oidc", "client_registration", "client_name")
+	if err != nil {
+		log.Infof("client_name not found, using client_id as fallback")
+		clientName = clientID
+	}
+
+	clientPayload := map[string]interface{}{
+		"client_name":   clientName,
+		"redirect_uris": []string{"*"},
+	}
+	certpool, _ := x509.SystemCertPool()
+	if certpool == nil {
+		certpool = x509.NewCertPool()
+	}
+	caFiles, _ := filepath.Glob(filepath.Join(ctx.String("capath"), "*.pem"))
+	for _, f := range caFiles {
+		raw, _ := os.ReadFile(f)
+		certpool.AppendCertsFromPEM(raw)
+	}
+	client := resty.New()
+	client.SetTLSClientConfig(&tls.Config{
+		RootCAs: certpool,
+	})
+
+	url := fmt.Sprintf("https://%s:9443/realms/%s/clients-registrations/openid-connect", kcBase, kcRealm)
+
+	resp, err := client.R().
+		SetHeader("Authorization", "Bearer "+string(token)).
+		SetHeader("Content-Type", "application/json").
+		SetBody(clientPayload).
+		Post(url)
+
+	if err != nil {
+		return fmt.Errorf("registration request failed: %w", err)
+	}
+	if !resp.IsSuccess() {
+		return fmt.Errorf("keycloak registration error (%d): %s", resp.StatusCode(), resp.Body())
+	}
+
+	secretPath := filepath.Join(datapath, "public", "client_secrets.json")
+	os.WriteFile(secretPath, resp.Body(), 0600)
+
+	log.Infof("Client registered successfully. Secrets saved to %s", secretPath)
+	return nil
+}
