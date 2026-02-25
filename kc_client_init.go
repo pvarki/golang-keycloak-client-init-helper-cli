@@ -191,7 +191,7 @@ func registerClientAction(ctx *cli.Context) error {
 		return fmt.Errorf("keycloak registration error (%d): %s", resp.StatusCode(), resp.Body())
 	}
 
-	secretPath := filepath.Join(datapath, "public", "client_secrets.json")
+	secretPath := filepath.Join(datapath, "oidc", "registration.json")
 	os.WriteFile(secretPath, resp.Body(), 0600)
 
 	log.Infof("Client registered successfully. Secrets saved to %s", secretPath)
