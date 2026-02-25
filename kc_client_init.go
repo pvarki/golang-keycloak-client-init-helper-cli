@@ -153,15 +153,9 @@ func registerClientAction(ctx *cli.Context) error {
 		return fmt.Errorf("could not read token file: %w", err)
 	}
 
-	clientID, err := jsonparser.GetString(jsondata, "oidc", "client_registration", "client_id")
-	if err != nil {
-		return fmt.Errorf("client_id is required in manifest: %w", err)
-	}
-
 	clientName, err := jsonparser.GetString(jsondata, "oidc", "client_registration", "client_name")
 	if err != nil {
-		log.Infof("client_name not found, using client_id as fallback")
-		clientName = clientID
+		return fmt.Errorf("client_name is required in manifest: %w", err)
 	}
 
 	clientPayload := map[string]interface{}{
