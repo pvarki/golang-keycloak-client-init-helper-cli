@@ -104,7 +104,7 @@ func getKCTokenAction(ctx *cli.Context) error {
 		Certificates: []tls.Certificate{clientKP},
 	})
 
-	url := fmt.Sprintf("https://%s:4439/api/v1/product/kctoken", rmBase)
+	url := fmt.Sprintf("https://%s/api/v1/product/kctoken", rmBase)
 	log.Infof("Requesting token from %s", url)
 
 	resp, err := client.R().
@@ -176,7 +176,7 @@ func registerClientAction(ctx *cli.Context) error {
 		RootCAs: certpool,
 	})
 
-	url := fmt.Sprintf("https://%s:9443/realms/%s/clients-registrations/openid-connect", kcBase, kcRealm)
+	url := fmt.Sprintf("https://%s/realms/%s/clients-registrations/openid-connect", kcBase, kcRealm)
 
 	resp, err := client.R().
 		SetHeader("Authorization", "Bearer "+string(token)).
