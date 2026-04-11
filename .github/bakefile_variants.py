@@ -52,7 +52,7 @@ async def main() -> None:
     ret_tgts, ret_hcl = service_hcl(
         "kc_client_init",
         {
-            "image": f"ghcr.io/pvarki/kc_client_init:1.1.1{DOCKER_TAG_EXTRA}",
+            "image": f"ghcr.io/pvarki/kc_client_init:1.0.0{DOCKER_TAG_EXTRA}",
             "build": {
                 "context": "./",
                 "dockerfile": "Dockerfile",
