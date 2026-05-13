@@ -16,7 +16,7 @@ import (
 )
 
 // Version is incremented using bump2version
-const Version = "1.0.0+260513"
+const Version = "1.1.0+260513"
 
 // safeJoin joins base with parts and verifies the result stays inside base.
 func safeJoin(base string, parts ...string) (string, error) {
