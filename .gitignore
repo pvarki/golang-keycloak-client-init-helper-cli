@@ -28,3 +28,5 @@ build/
 
 *.p12
 *.pem
+
+.prettier_cache

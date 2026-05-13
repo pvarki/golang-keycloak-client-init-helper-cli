@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/buger/jsonparser"
 	"github.com/go-resty/resty/v2"
@@ -15,7 +16,20 @@ import (
 )
 
 // Version is incremented using bump2version
-const Version = "1.0.0"
+const Version = "1.0.0+260513"
+
+// safeJoin joins base with parts and verifies the result stays inside base.
+func safeJoin(base string, parts ...string) (string, error) {
+	abs, err := filepath.Abs(base)
+	if err != nil {
+		return "", fmt.Errorf("invalid base path: %w", err)
+	}
+	joined := filepath.Clean(filepath.Join(append([]string{abs}, parts...)...))
+	if !strings.HasPrefix(joined, abs+string(os.PathSeparator)) && joined != abs {
+		return "", fmt.Errorf("path escapes base directory: %s", joined)
+	}
+	return joined, nil
+}
 
 func fileExist(pth string) bool {
 	if _, err := os.Stat(pth); err == nil {
@@ -125,8 +139,11 @@ func getKCTokenAction(ctx *cli.Context) error {
 		return fmt.Errorf("could not find token in response: %s", resp.Body())
 	}
 
-	outputPath := filepath.Join(datapath, "public", ctx.String("tokenpath"))
-	if err := os.WriteFile(outputPath, []byte(token), 0644); err != nil {
+	outputPath, err := safeJoin(datapath, "public", filepath.Base(ctx.String("tokenpath")))
+	if err != nil {
+		return fmt.Errorf("unsafe token output path: %w", err)
+	}
+	if err := os.WriteFile(outputPath, []byte(token), 0644); err != nil { // #nosec G703 -- path validated by safeJoin
 		return fmt.Errorf("failed to write token file: %w", err)
 	}
 
@@ -194,8 +211,13 @@ func registerClientAction(ctx *cli.Context) error {
 		return fmt.Errorf("keycloak registration error (%d): %s", resp.StatusCode(), resp.Body())
 	}
 
-	secretPath := filepath.Join(datapath, "oidc", "registration.json")
-	os.WriteFile(secretPath, resp.Body(), 0600)
+	secretPath, err := safeJoin(datapath, "oidc", "registration.json")
+	if err != nil {
+		return fmt.Errorf("unsafe secret output path: %w", err)
+	}
+	if err := os.WriteFile(secretPath, resp.Body(), 0600); err != nil { // #nosec G703 -- path validated by safeJoin
+		return fmt.Errorf("failed to write registration secrets: %w", err)
+	}
 
 	log.Infof("Client registered successfully. Secrets saved to %s", secretPath)
 	return nil
