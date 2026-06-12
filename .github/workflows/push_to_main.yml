@@ -2,10 +2,11 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest # arc-runner-set
+    runs-on: arc-runner-set
     permissions:
       contents: read
       packages: write
