@@ -1,5 +1,6 @@
 on:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   version-check:
@@ -32,7 +33,7 @@ jobs:
 
   publish:
     needs: [version-check, pre-commit]
-    runs-on: ubuntu-latest # arc-runner-set
+    runs-on: arc-runner-set
     permissions:
       contents: read
       packages: write
