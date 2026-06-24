@@ -15,7 +15,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// Version is incremented using bump2version
+// Version is incremented using bump-my-version
 const Version = "1.1.0+260513"
 
 // safeJoin joins base with parts and verifies the result stays inside base.
@@ -121,7 +121,7 @@ func getKCTokenAction(ctx *cli.Context) error {
 		Certificates: []tls.Certificate{clientKP},
 	})
 
-	url := fmt.Sprintf("https://%s/api/v1/product/kctoken", rmBase)
+	url := fmt.Sprintf("%s/api/v1/product/kctoken", strings.TrimRight(rmBase, "/"))
 	log.Infof("Requesting token from %s", url)
 
 	resp, err := client.R().
@@ -196,7 +196,7 @@ func registerClientAction(ctx *cli.Context) error {
 		RootCAs: certpool,
 	})
 
-	url := fmt.Sprintf("https://%s/realms/%s/clients-registrations/openid-connect", kcBase, kcRealm)
+	url := fmt.Sprintf("%s/realms/%s/clients-registrations/openid-connect", strings.TrimRight(kcBase, "/"), kcRealm)
 
 	resp, err := client.R().
 		SetHeader("Authorization", "Bearer "+string(token)).
