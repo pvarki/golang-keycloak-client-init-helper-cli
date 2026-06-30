@@ -95,15 +95,6 @@ func getKCTokenAction(ctx *cli.Context) error {
 	certpath := filepath.Join(datapath, "public", "mtlsclient.pem")
 	keypath := filepath.Join(datapath, "private", "mtlsclient.key")
 
-	if !fileExist(certpath) || !fileExist(keypath) {
-		return errors.New("mtls certificates not found")
-	}
-
-	clientKP, err := tls.LoadX509KeyPair(certpath, keypath)
-	if err != nil {
-		return fmt.Errorf("failed to load keypair: %w", err)
-	}
-
 	certpool, _ := x509.SystemCertPool()
 	if certpool == nil {
 		certpool = x509.NewCertPool()
@@ -115,11 +106,19 @@ func getKCTokenAction(ctx *cli.Context) error {
 		certpool.AppendCertsFromPEM(raw)
 	}
 
+	tlsConfig := &tls.Config{RootCAs: certpool}
+	// Client cert is optional: present it when available (Traefik mTLS path, unchanged
+	// behaviour); otherwise rely on the service mesh (Linkerd) for the client identity.
+	if fileExist(certpath) && fileExist(keypath) {
+		clientKP, err := tls.LoadX509KeyPair(certpath, keypath)
+		if err != nil {
+			return fmt.Errorf("failed to load keypair: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{clientKP}
+	}
+
 	client := resty.New()
-	client.SetTLSClientConfig(&tls.Config{
-		RootCAs:      certpool,
-		Certificates: []tls.Certificate{clientKP},
-	})
+	client.SetTLSClientConfig(tlsConfig)
 
 	url := fmt.Sprintf("%s/api/v1/product/kctoken", strings.TrimRight(rmBase, "/"))
 	log.Infof("Requesting token from %s", url)
