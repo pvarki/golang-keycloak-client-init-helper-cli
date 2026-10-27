@@ -1,6 +1,6 @@
 module github.com/pvarki/golang-kraftwerk-init-helper-cli
 
-go 1.26.2
+go 1.27.3
 
 require (
 	github.com/buger/jsonparser v1.6.1
